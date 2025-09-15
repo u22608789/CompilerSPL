@@ -3,6 +3,7 @@ import pytest
 from tokens import T
 from lexer import Lexer
 
+
 def toks(text):
     lx = Lexer(text)
     out = []
@@ -13,8 +14,10 @@ def toks(text):
             break
     return out
 
+
 def types(text):
     return [t.typ for t in toks(text)]
+
 
 def lexemes(text):
     return [t.lexeme for t in toks(text)]
@@ -22,40 +25,42 @@ def lexemes(text):
 
 # 1) Keywords vs identifiers
 def test_keywords_and_idents():
-    ts = toks("glob main var return if else while do until print halt neg not eq or and plus minus mult div >")
+    ts = toks(
+        "glob main var return if else while do until print halt neg not eq or and plus minus mult div >")
     # Just check the first few and the last operator
     assert ts[0].typ == T.GLOB
     assert ts[1].typ == T.MAIN
     assert ts[2].typ == T.VAR
     assert ts[3].typ == T.RETURN
-    assert ts[-2].typ == T.DIV
-    assert ts[-3].typ == T.MULT
+    assert ts[-3].typ == T.DIV
+    assert ts[-2].typ == T.GT
     assert ts[-1].typ == T.EOF
 
     # Identifier that looks similar but isn't a keyword
     ts2 = toks("globe var1 eqeq plus1")
     assert [t.typ for t in ts2[:4]] == [T.IDENT, T.IDENT, T.IDENT, T.IDENT]
-    assert [t.lexeme for t in ts2[:4]] == ["globe","var1","eqeq","plus1"]
+    assert [t.lexeme for t in ts2[:4]] == ["globe", "var1", "eqeq", "plus1"]
 
 
 # 2) Numbers (0 or nonzero start; no leading zeros like 01)
 def test_numbers_valid_and_tokenization():
     ts = toks("0 7 42 999")
     assert [t.typ for t in ts[:4]] == [T.NUMBER, T.NUMBER, T.NUMBER, T.NUMBER]
-    assert [t.lexeme for t in ts[:4]] == ["0","7","42","999"]
+    assert [t.lexeme for t in ts[:4]] == ["0", "7", "42", "999"]
 
     # "01" should be tokenized as NUMBER("0") then IDENT("1") won't match;
     # actually "1" starts a NUMBER, so you'll get NUMBER("0"), NUMBER("1")
     ts2 = toks("01")
     assert [t.typ for t in ts2[:2]] == [T.NUMBER, T.NUMBER]
-    assert [t.lexeme for t in ts2[:2]] == ["0","1"]
+    assert [t.lexeme for t in ts2[:2]] == ["0", "1"]
 
 
 # 3) Strings (alnum only, max 15, must close)
 def test_strings_valid():
     ts = toks('"OK" "abc123" "A1B2C3" ""')
     assert [t.typ for t in ts[:4]] == [T.STRING, T.STRING, T.STRING, T.STRING]
-    assert [t.lexeme for t in ts[:4]] == ["OK","abc123","A1B2C3",""]
+    assert [t.lexeme for t in ts[:4]] == ["OK", "abc123", "A1B2C3", ""]
+
 
 def test_strings_invalid_non_alnum():
     with pytest.raises(ValueError):
@@ -63,12 +68,14 @@ def test_strings_invalid_non_alnum():
     with pytest.raises(ValueError):
         toks('"space here"')  # space not allowed
 
+
 def test_strings_invalid_too_long():
     long15 = "A"*15
     ok = toks(f'"{long15}"')
     assert ok[0].typ == T.STRING and ok[0].lexeme == long15
     with pytest.raises(ValueError):
         toks('"ABCDEFGHIJKLMNOP"')  # 16 chars
+
 
 def test_strings_unterminated():
     with pytest.raises(ValueError):
@@ -79,7 +86,8 @@ def test_strings_unterminated():
 def test_punct_and_ops():
     text = "{ } ( ) ; = >"
     tt = types(text)
-    assert tt[:7] == [T.LBRACE, T.RBRACE, T.LPAREN, T.RPAREN, T.SEMI, T.ASSIGN, T.GT]
+    assert tt[:7] == [T.LBRACE, T.RBRACE,
+                      T.LPAREN, T.RPAREN, T.SEMI, T.ASSIGN, T.GT]
 
 
 # 5) Whitespace and positions (line/col)
