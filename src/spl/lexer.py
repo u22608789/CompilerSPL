@@ -1,6 +1,6 @@
 # lexer.py
 import re
-from tokens import T, Token, KEYWORDS
+from .tokens import T, Token, KEYWORDS
 
 IDENT_RE  = re.compile(r'[a-z][a-z0-9]*') # match user defined name - lower-case only
 NUM_RE    = re.compile(r'(0|[1-9][0-9]*)') #match number - either a 0 or number not starting with zero 

@@ -1,7 +1,7 @@
 # tests/test_lexer_basic.py
 import pytest
-from tokens import T
-from lexer import Lexer
+from spl.tokens import T
+from spl.lexer import Lexer
 
 
 def toks(text):

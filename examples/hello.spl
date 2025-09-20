@@ -1,0 +1,13 @@
+glob { x y }
+proc {
+  p(x) { local { } halt }
+}
+func {
+  f(a b) { local { z } print "OK" ; return a }
+}
+main {
+  var { t }
+  print 0;
+  t = ( (a plus 1) );
+  if ( (a eq 0) ) { halt } else { print "X" }
+}
