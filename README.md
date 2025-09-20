@@ -1,261 +1,137 @@
-# CompilerSPL
+# SPL Compiler – Frontend (Phase 1)
+
+This repository contains the **frontend** of our compiler for the *Students’ Programming Language (SPL)*, as defined in the COS341 Semester Project 2025 spec.
+
+Implemented components:
+
+* **Token model** (`tokens.py`) – enums for SPL’s terminals and keywords
+* **Lexer** (`lexer.py`) – converts raw `.spl` source into a stream of tokens
+* **LL(1)-friendly grammar** – refactored from the given SPL grammar to support predictive parsing
+* **AST nodes** (`astnodes.py`) – dataclasses to represent SPL programs structurally
+* **Pretty-printer** (`ast_printer.py`) – prints ASTs in a tree-like format for debugging
+* **Recursive-descent parser** (`parser.py`) – builds an AST from tokens
+* **Tests** (`tests/`) – unit tests for lexer and parser behavior
+
 ---
-## Grammar G
+
+## Project Structure
+
+```
+src/
+  spl/
+    __init__.py
+    tokens.py
+    lexer.py
+    parser.py
+    astnodes.py
+    ast_printer.py
+examples/
+  hello.spl
+  rich.spl
+  richer.spl
+tests/
+  test_lexer_basic.py
+  test_parser_assignments.py
+  ...
+```
+
 ---
-SPL_PROG    ::= glob { VARIABLES } proc { PROCDEFS } func { FUNCDEFS } main { MAINPROG }
 
-VARIABLES   ::= 
-VARIABLES   ::= VAR VARIABLES
+## Requirements
 
-VAR         ::= user-defined-name 
+* Python **3.10+**
+* [`pytest`](https://docs.pytest.org/) for testing
 
-NAME        ::= user-defined-name
+Install dependencies (only pytest is needed right now):
 
-PROCDEFS    ::= 
-PROCDEFS    ::= PDEF PROCDEFS
+```bash
+python -m pip install -r requirements.txt
+```
 
-PDEF        ::= NAME ( PARAM ) { BODY }
-
-FDEF        ::= NAME ( PARAM ) { BODY ; return ATOM }
-
-FUNCDEFS    ::= FDEF FUNCDEFS
-FUNCDEFS    ::= 
-
-BODY        ::= local { MAXTHREE } ALGO 
-
-PARAM       ::= MAXTHREE 
-
-MAXTHREE    ::= 
-MAXTHREE    ::= VAR
-MAXTHREE    ::= VAR VAR
-MAXTHREE    ::= VAR VAR VAR
-
-MAINPROG    ::= var { VARIABLES } ALGO
-
-ATOM        ::= VAR
-ATOM        ::= number 
-
-ALGO        ::= INSTR 
-ALGO        ::= INSTR ; ALGO
-
-INSTR       ::= halt
-INSTR       ::= print OUTPUT
-INSTR       ::= NAME ( INPUT )          //procedure call
-INSTR       ::= ASSIGN
-INSTR       ::= LOOP
-INSTR       ::= BRANCH
-
-ASSIGN      ::= VAR = NAME ( INPUT )    //function call
-ASSIGN      ::= VAR = TERM
-
-LOOP        ::= while TERM { ALGO }
-LOOP        ::= do { ALGO } until TERM
-
-BRANCH      ::= if TERM { ALGO }
-BRANCH      ::= if TERM { ALGO } else { ALGO }
-
-OUTPUT      ::= ATOM
-OUTPUT      ::= string
-
-INPUT       ::= 
-INPUT       ::= ATOM
-INPUT       ::= ATOM ATOM
-INPUT       ::= ATOM ATOM ATOM 
-
-TERM        ::= ATOM
-TERM        ::= ( UNOP TERM )
-TERM        ::= ( TERM BINOP TERM )
-
-UNOP        ::= neg
-UNOP        ::= not
-
-BINOP       ::= eq
-BINOP       ::= >
-BINOP       ::= or
-BINOP       ::= and
-BINOP       ::= plus
-BINOP       ::= minus
-BINOP       ::= mult
-BINOP       ::= div
-
-
-## Suitability of Grammar G for LL(1) Parsing
 ---
-In the original grammar G, several productions exhibit FIRST/FIRST conflicts that make the grammar unsuitable for LL(1) parsing:
-(i) ALGO → INSTR | INSTR ; ALGO (both branches begin with FIRST(INSTR)),
-(ii) INPUT and MAXTHREE where multiple alternatives begin with the same token class (ATOM/VAR), and
-(iii) ASSIGN where both alternatives begin with VAR.
-These violate the LL(1) requirements that for any A → α | β, FIRST(α) ∩ FIRST(β) = ∅, and if ε ∈ FIRST(α) then FIRST(β) ∩ FOLLOW(A) = ∅. We therefore refactor G into an equivalent LL(1)-friendly grammar G′ by introducing tail nonterminals (for lists), consolidating bounded lists (0..3) without ambiguous prefixes, and left-factoring common prefixes.
 
-## Alternative Grammar G' in EBNF shorthand 
+## Running the Lexer
+
+You can inspect tokens with the `dump_tokens.py` helper:
+
+```bash
+python dump_tokens.py examples/hello.spl
+```
+
+Example output:
+
+```
+1:1   GLOB    'glob'
+1:6   LBRACE  '{'
+...
+1:43  IDENT   'x'
+1:45  ASSIGN  '='
+1:47  LPAREN  '('
+1:48  IDENT   'a'
+1:50  PLUS    'plus'
+1:55  NUMBER  '1'
+1:56  RPAREN  ')'
+```
+
 ---
-SPL_PROG    ::= glob { VARIABLES } proc { PROCDEFS } func { FUNCDEFS } main { MAINPROG }
 
-VARIABLES   ::= (VAR)*
+## Running the Parser
 
-VAR         ::= IDENT               // user-defined name (not a keyword)
-NAME        ::= IDENT
+Use `parse_file.py` to parse an SPL program and print its AST:
 
-PROCDEFS    ::= (PDEF)*
+```bash
+python parse_file.py examples/rich.spl
+```
 
-PDEF        ::= NAME ( PARAM ) { BODY }
+Example output:
 
-FDEF        ::= NAME ( PARAM ) { BODY ; return ATOM }
+```
+Program
+  globals:
+    List[1]
+      [0]
+        'g'
+  procs:
+    List[1]
+      [0]
+        ProcDef
+          name: 'p'
+          ...
+  main:
+    Main
+      algo:
+        Algo
+          instrs:
+            List[4]
+              [0] Assign(var='i', rhs=NumberLit(3))
+              [1] Call(name='p', args=[VarRef('i')])
+              [2] LoopWhile(...)
+              [3] BranchIf(...)
+```
 
-FUNCDEFS    ::= (FDEF)*
-
-BODY        ::= local { MAXTHREE } ALGO
-
-PARAM       ::= MAXTHREE
-
-MAXTHREE    ::= (VAR (VAR (VAR)?)?)?    // up to 3 variables
-
-MAINPROG    ::= var { VARIABLES } ALGO
-
-ATOM        ::= VAR
-ATOM        ::= NUMBER
-
-ALGO        ::= INSTR ( ; INSTR )*          // sequence of ≥1 instructions
-
-INSTR       ::= halt
-INSTR       ::= print OUTPUT
-INSTR       ::= NAME ( INPUT )             // procedure call
-INSTR       ::= ASSIGN
-INSTR       ::= LOOP
-INSTR       ::= BRANCH
-
-ASSIGN      ::= VAR = NAME ( INPUT )      // function call assignment
-ASSIGN      ::= VAR = TERM                // plain expression assignment
-
-LOOP        ::= while TERM { ALGO }
-LOOP        ::= do { ALGO } until TERM
-
-BRANCH      ::= if TERM { ALGO }
-BRANCH      ::= if TERM { ALGO } else { ALGO }
-
-OUTPUT      ::= ATOM
-OUTPUT      ::= STRING
-
-INPUT       ::= (ATOM (ATOM (ATOM)?)?)?    // up to 3 atoms, optional
-
-TERM        ::= ATOM
-TERM        ::= ( UNOP TERM )
-TERM        ::= ( TERM BINOP TERM )
-
-UNOP        ::= neg
-UNOP        ::= not
-
-BINOP       ::= eq
-BINOP       ::= GT
-BINOP       ::= or
-BINOP       ::= and
-BINOP       ::= plus
-BINOP       ::= minus
-BINOP       ::= mult
-BINOP       ::= div
-
-## Alternative Grammar G' in pure CFG form 
 ---
-// Top Level
-SPL_PROG    ::= glob { VARIABLES } proc { PROCDEFS } func { FUNCDEFS } main { MAINPROG }
 
+## Running Tests
 
-// Variable list
-VARIABLES   ::= VAR VARIABLES
-VARIABLES   ::= ε
-VAR         ::= IDENT
-NAME        ::= IDENT
+Run the unit test suite with:
 
+```bash
+python -m pytest -q
+```
 
-// Procedures and functions
-PROCDEFS    ::= PDEF PROCDEFS
-PROCDEFS    ::= ε
+---
 
-PDEF        ::= NAME ( PARAM ) { BODY }
+## Example Programs
 
-FUNCDEFS    ::= FDEF FUNCDEFS
-FUNCDEFS    ::= ε
+* `examples/hello.spl` – minimal SPL program
+* `examples/rich.spl` – includes proc call, while loop, if/else
+* `examples/richer.spl` – also includes do–until and function calls in expressions
 
-FDEF        ::= NAME ( PARAM ) { BODY ; return ATOM }
+---
 
+## Next Steps
 
-// Bodies and params 
-BODY        ::= local { MAXTHREE } ALGO
-PARAM       ::= MAXTHREE
+* **Semantic Analysis** (Phase 2): scope checking, type checking, etc.
+* **Code Generation** (Phase 3): translate AST into target code
 
-MAXTHREE    ::= VAR MAXTWO
-MAXTHREE    ::= ε
-
-MAXTWO      ::= VAR MAXONE
-MAXTWO      ::= ε
-
-MAXONE      ::= VAR
-MAXONE      ::= ε
-
-
-// Main Program 
-MAINPROG    ::= var { VARIABLES } ALGO
-
-
-// Atoms 
-ATOM        ::= VAR
-ATOM        ::= NUMBER
-
-
-// Algorithms and instructions 
-ALGO        ::= INSTR ALGO_TAIL
-
-ALGO_TAIL   ::= ; INSTR ALGO_TAIL
-ALGO_TAIL   ::= ε
-
-INSTR       ::= halt
-INSTR       ::= print OUTPUT
-INSTR       ::= NAME ( INPUT )
-INSTR       ::= ASSIGN
-INSTR       ::= LOOP
-INSTR       ::= BRANCH
-
-
-// Assignments 
-ASSIGN      ::= VAR = NAME ( INPUT )
-ASSIGN      ::= VAR = TERM
-
-
-// Loops and branches 
-LOOP        ::= while TERM { ALGO }
-LOOP        ::= do { ALGO } until TERM
-
-BRANCH      ::= if TERM { ALGO }
-BRANCH      ::= if TERM { ALGO } else { ALGO }
-
-
-// Output and input 
-OUTPUT      ::= ATOM
-OUTPUT      ::= STRING
-
-INPUT       ::= ATOM INPUT_TAIL
-INPUT       ::= ε
-
-INPUT_TAIL  ::= ATOM INPUT_TAIL2
-INPUT_TAIL  ::= ε
-
-INPUT_TAIL2 ::= ATOM
-INPUT_TAIL2 ::= ε
-
-
-// Terms 
-TERM        ::= ATOM
-TERM        ::= ( UNOP TERM )
-TERM        ::= ( TERM BINOP TERM )
-
-UNOP        ::= neg
-UNOP        ::= not
-
-BINOP       ::= eq
-BINOP       ::= GT
-BINOP       ::= or
-BINOP       ::= and
-BINOP       ::= plus
-BINOP       ::= minus
-BINOP       ::= mult
-BINOP       ::= div
+---

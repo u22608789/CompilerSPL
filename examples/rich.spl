@@ -1,0 +1,17 @@
+glob { g }
+proc {
+  p(a) { local { } print a }
+}
+func {
+  iszero(n) { local { } halt ; return n }
+}
+main {
+  var { i }
+  i = 3;
+  p(i);
+  while (i > 0) {
+    print i;
+    i = ( i minus 1 )
+  };
+  if ( i eq 0 ) { print "done" } else { print "oops" }
+}
