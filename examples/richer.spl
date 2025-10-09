@@ -1,0 +1,17 @@
+glob { }
+proc {
+  echo(a) { local { } print a }
+}
+func {
+  inc(n) { local { } halt ; return n }
+}
+main {
+  var { x y }
+  x = 2;
+  y = inc(x);
+  do {
+    echo(y);
+    y = ( y minus 1 )
+  } until ( y eq 0 );
+  if ( x > 1 ) { print "ok" } else { print "bad" }
+}
