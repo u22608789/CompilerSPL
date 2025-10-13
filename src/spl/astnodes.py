@@ -1,116 +1,195 @@
-# astnodes.py
-from dataclasses import dataclass
-from typing import List, Optional, Union
+"""
+AST Node Definitions for SPL Compiler (Phase 2 Updated)
 
+Each node now includes:
+- node_id: int (default -1, assigned by ast_ids.assign_ids())
+- resolved: Optional[SymbolTableEntry] for VarRef (filled by scope checker)
+"""
+
+from dataclasses import dataclass
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .symbol_table import SymbolTableEntry
+
+
+# ============================================================================
+# Top-level program structure
+# ============================================================================
 
 @dataclass
 class Program:
+    """Root: glob { VARIABLES } proc { PROCDEFS } func { FUNCDEFS } main { MAINPROG }"""
     globals: List[str]
     procs: List['ProcDef']
     funcs: List['FuncDef']
     main: 'Main'
+    node_id: int = -1
 
 
-@dataclass 
-class ProcDef: 
+@dataclass
+class ProcDef:
+    """Procedure: NAME ( PARAM ) { BODY }"""
     name: str
     params: List[str]
     body: 'Body'
+    node_id: int = -1
 
 
-@dataclass 
-class FuncDef: 
+@dataclass
+class FuncDef:
+    """Function: NAME ( PARAM ) { BODY ; return ATOM }"""
     name: str
     params: List[str]
     body: 'Body'
     ret: 'Atom'
+    node_id: int = -1
 
 
-@dataclass 
-class Body: 
+@dataclass
+class Body:
+    """Body: local { MAXTHREE } ALGO"""
     locals: List[str]
     algo: 'Algo'
+    node_id: int = -1
 
 
-@dataclass 
-class Main: 
-    locals: List[str]
+@dataclass
+class Main:
+    """Main: var { VARIABLES } ALGO"""
+    variables: List[str]
     algo: 'Algo'
+    node_id: int = -1
 
-# Statements / expressions
-@dataclass 
-class Algo: 
+
+# ============================================================================
+# Algorithms (instruction sequences)
+# ============================================================================
+
+@dataclass
+class Algo:
+    """Sequence of instructions: INSTR ( ; INSTR )*"""
     instrs: List['Instr']
-
-@dataclass 
-class Assign: 
-    var: str
-    rhs: Union['Call', 'Term']
+    node_id: int = -1
 
 
-@dataclass 
-class Call: 
+# ============================================================================
+# Instructions
+# ============================================================================
+
+@dataclass
+class Halt:
+    """halt instruction"""
+    node_id: int = -1
+
+
+@dataclass
+class Print:
+    """print OUTPUT"""
+    output: 'Output'
+    node_id: int = -1
+
+
+@dataclass
+class Call:
+    """Procedure/function call: NAME ( INPUT )"""
     name: str
-    args: List['Atom']    # proc call (stmt) or func call (expr context)
+    args: List['Atom']
+    node_id: int = -1
 
 
-@dataclass 
-class LoopWhile: 
+@dataclass
+class Assign:
+    """Assignment: VAR = TERM or VAR = NAME ( INPUT )"""
+    var: str
+    rhs: 'Term | Call'
+    node_id: int = -1
+
+
+@dataclass
+class LoopWhile:
+    """while TERM { ALGO }"""
     cond: 'Term'
     body: 'Algo'
+    node_id: int = -1
 
 
-@dataclass 
-class LoopDoUntil: 
+@dataclass
+class LoopDoUntil:
+    """do { ALGO } until TERM"""
     body: 'Algo'
     cond: 'Term'
+    node_id: int = -1
 
 
-@dataclass 
-class BranchIf: 
+@dataclass
+class BranchIf:
+    """if TERM { ALGO } [else { ALGO }]"""
     cond: 'Term'
     then_: 'Algo'
-    else_: Optional['Algo']
+    else_: Optional['Algo'] = None
+    node_id: int = -1
 
 
-@dataclass 
-class Print: 
-    out: Union['Atom', 'StringLit']
+# ============================================================================
+# Atoms and Literals
+# ============================================================================
 
-@dataclass 
-class Halt: 
-    pass
-
-# Terms / atoms
-Atom = Union['VarRef', 'NumberLit']
-
-@dataclass 
-class VarRef: 
+@dataclass
+class VarRef:
+    """Variable reference - Phase 2: includes resolved field for name resolution"""
     name: str
+    node_id: int = -1
+    resolved: Optional['SymbolTableEntry'] = None
 
-@dataclass 
-class NumberLit: 
+
+@dataclass
+class NumberLit:
+    """Numeric literal"""
     value: int
+    node_id: int = -1
 
-@dataclass 
-class StringLit: 
+
+@dataclass
+class StringLit:
+    """String literal"""
     value: str
+    node_id: int = -1
 
-@dataclass 
-class TermAtom: 
-    atom: Atom
 
-@dataclass 
-class TermUn: 
-    op: str
+# ============================================================================
+# Terms (Expressions)
+# ============================================================================
+
+@dataclass
+class TermAtom:
+    """Term: ATOM"""
+    atom: 'Atom'
+    node_id: int = -1
+
+
+@dataclass
+class TermUn:
+    """Term: ( UNOP TERM )"""
+    op: str  # 'neg' or 'not'
     term: 'Term'
+    node_id: int = -1
 
 
-@dataclass 
-class TermBin: 
+@dataclass
+class TermBin:
+    """Term: ( TERM BINOP TERM )"""
     left: 'Term'
-    op: str
+    op: str  # eq, >, or, and, plus, minus, mult, div
     right: 'Term'
+    node_id: int = -1
 
-Term = Union[TermAtom, TermUn, TermBin]
-Instr = Union[Assign, Call, LoopWhile, LoopDoUntil, BranchIf, Print, Halt]
+
+# ============================================================================
+# Type aliases
+# ============================================================================
+
+Atom = VarRef | NumberLit
+Output = VarRef | NumberLit | StringLit
+Term = TermAtom | TermUn | TermBin
+Instr = Halt | Print | Call | Assign | LoopWhile | LoopDoUntil | BranchIf
