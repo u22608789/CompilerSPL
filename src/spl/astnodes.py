@@ -7,7 +7,7 @@ Each node now includes:
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .symbol_table import SymbolTableEntry
@@ -102,7 +102,7 @@ class Call:
 class Assign:
     """Assignment: VAR = TERM or VAR = NAME ( INPUT )"""
     var: str
-    rhs: 'Term | Call'
+    rhs: Union['Term', 'Call']
     node_id: int = -1
 
 
@@ -186,10 +186,10 @@ class TermBin:
 
 
 # ============================================================================
-# Type aliases
+# Type aliases (using Union for Python 3.7+ compatibility)
 # ============================================================================
 
-Atom = VarRef | NumberLit
-Output = VarRef | NumberLit | StringLit
-Term = TermAtom | TermUn | TermBin
-Instr = Halt | Print | Call | Assign | LoopWhile | LoopDoUntil | BranchIf
+Atom = Union[VarRef, NumberLit]
+Output = Union[VarRef, NumberLit, StringLit]
+Term = Union[TermAtom, TermUn, TermBin]
+Instr = Union[Halt, Print, Call, Assign, LoopWhile, LoopDoUntil, BranchIf]
