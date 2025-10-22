@@ -44,15 +44,15 @@ def main():
         if args.dump_scopes:
             print(st.pretty_print())
 
-        # Temporary diagnostics print (M4 will formalize)
+        # Diagnostics: use structured Diagnostic objects
         if checker.diagnostics:
-            print("\nDiagnostics:")
+            print("\nNaming Error:")
             for d in checker.diagnostics:
                 print(f"  - {d}")
             # Non-zero exit helps CI catch mistakes later
             sys.exit(1)
         else:
-            print("Scopes OK.")
+            print("Variable Naming and Function Naming accepted")
 
 if __name__ == "__main__":
     main()

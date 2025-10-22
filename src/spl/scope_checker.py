@@ -14,6 +14,7 @@ The checker operates in multiple passes:
 from typing import Dict, List, Optional, Any
 from .symbol_table import SymbolTable, SymbolTableEntry, create_base_scopes
 from .astnodes import *
+from .errors import Diagnostic
 
 
 class ScopeChecker:
@@ -41,7 +42,10 @@ class ScopeChecker:
         self.local_scopes: Dict[str, int] = {}
 
         # Track errors/diagnostics (to be implemented by M4)
-        self.diagnostics: List[str] = []
+        self.diagnostics: List[Diagnostic] = []
+
+        # Optional map from VarRef node_id to decl_node_id (debugging)
+        self.uses_to_decls: Dict[int, int] = {}
 
     def check(self) -> SymbolTable:
         """
@@ -67,12 +71,9 @@ class ScopeChecker:
         self._build_local_scopes()
 
         # Step 4: Resolve variable uses (M3 - TODO)
-        # self._resolve_uses()
+        self._resolve_uses()
 
-        # Step 5: Report errors if any (M4 - TODO)
-        # if self.diagnostics:
-        #     raise Exception("\n".join(self.diagnostics))
-
+        # Step 5: Return the symbol table (M4: diagnostics are collected, not raised)
         return self.symbol_table
 
     # ========================================================================
@@ -142,7 +143,7 @@ class ScopeChecker:
             try:
                 self.symbol_table.declare(global_id, entry)
             except ValueError as e:
-                self.diagnostics.append(str(e))
+                self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=entry.decl_node_id, scope_path=self.symbol_table.get_scope_path(global_id)))
 
     def _collect_proc_declarations(self) -> None:
         """
@@ -185,14 +186,19 @@ class ScopeChecker:
         for pdef in self.ast.procs:
             # clash with functions?
             if self.symbol_table.lookup_local(func_id, pdef.name):
-                self.diagnostics.append(f"Procedure '{pdef.name}' conflicts with function name")
+                self.diagnostics.append(Diagnostic(
+                    kind='CrossCategoryClash',
+                    message=f"Procedure '{pdef.name}' conflicts with function name",
+                    node_id=pdef.node_id,
+                    scope_path=self.symbol_table.get_scope_path(proc_id)
+                ))
             entry = SymbolTableEntry(
                 name=pdef.name, kind='proc', scope_id=proc_id, decl_node_id=pdef.node_id
             )
             try:
                 self.symbol_table.declare(proc_id, entry)
             except ValueError as e:
-                self.diagnostics.append(str(e))
+                self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=pdef.node_id, scope_path=self.symbol_table.get_scope_path(proc_id)))
 
     def _collect_func_declarations(self) -> None:
         """
@@ -207,14 +213,20 @@ class ScopeChecker:
         for fdef in self.ast.funcs:
             # clash with procedures?
             if self.symbol_table.lookup_local(proc_id, fdef.name):
-                self.diagnostics.append(f"Function '{fdef.name}' conflicts with procedure name")
+                self.diagnostics.append(Diagnostic(
+                    kind='CrossCategoryClash',
+                    message=f"Function '{fdef.name}' conflicts with procedure name",
+                    node_id=fdef.node_id,
+                    scope_path=self.symbol_table.get_scope_path(func_id)
+                ))
             entry = SymbolTableEntry(
                 name=fdef.name, kind='func', scope_id=func_id, decl_node_id=fdef.node_id
             )
             try:
                 self.symbol_table.declare(func_id, entry)
             except ValueError as e:
-                self.diagnostics.append(str(e))
+                self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=fdef.node_id, scope_path=self.symbol_table.get_scope_path(func_id)))
+
 
     def _collect_main_variables(self) -> None:
         """
@@ -236,7 +248,8 @@ class ScopeChecker:
             try:
                 self.symbol_table.declare(main_id, entry)
             except ValueError as e:
-                self.diagnostics.append(str(e))
+                self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=entry.decl_node_id, scope_path=self.symbol_table.get_scope_path(main_id)))
+
 
     def _check_cross_category_clashes(self) -> None:
         """
@@ -281,14 +294,34 @@ class ScopeChecker:
         func_names = func_scope.all_names()
         for var_name in global_scope.all_names():
             if var_name in proc_names:
-                self.diagnostics.append(f"Variable '{var_name}' conflicts with procedure name")
+                self.diagnostics.append(Diagnostic(
+                    kind='CrossCategoryClash',
+                    message=f"Variable '{var_name}' conflicts with procedure name",
+                    node_id=-1,
+                    scope_path=self.symbol_table.get_scope_path(global_id)
+                ))
             if var_name in func_names:
-                self.diagnostics.append(f"Variable '{var_name}' conflicts with function name")
+                self.diagnostics.append(Diagnostic(
+                    kind='CrossCategoryClash',
+                    message=f"Variable '{var_name}' conflicts with function name",
+                    node_id=-1,
+                    scope_path=self.symbol_table.get_scope_path(global_id)
+                ))
         for var_name in main_scope.all_names():
             if var_name in proc_names:
-                self.diagnostics.append(f"Main variable '{var_name}' conflicts with procedure name")
+                self.diagnostics.append(Diagnostic(
+                    kind='CrossCategoryClash',
+                    message=f"Main variable '{var_name}' conflicts with procedure name",
+                    node_id=-1,
+                    scope_path=self.symbol_table.get_scope_path(main_id)
+                ))
             if var_name in func_names:
-                self.diagnostics.append(f"Main variable '{var_name}' conflicts with function name")
+                self.diagnostics.append(Diagnostic(
+                    kind='CrossCategoryClash',
+                    message=f"Main variable '{var_name}' conflicts with function name",
+                    node_id=-1,
+                    scope_path=self.symbol_table.get_scope_path(main_id)
+                ))
 
     def _build_local_scopes(self) -> None:
         """
@@ -365,7 +398,12 @@ class ScopeChecker:
             seen = set()
             for idx, param in enumerate(pdef.params):
                 if param in seen:
-                    self.diagnostics.append(f"Duplicate parameter '{param}' in proc '{pdef.name}'")
+                    self.diagnostics.append(Diagnostic(
+                        kind='DuplicateName',
+                        message=f"Duplicate parameter '{param}' in proc '{pdef.name}'",
+                        node_id=self._proxy_id(pdef.node_id, f"proc:{pdef.name}:param", idx),
+                        scope_path=self.symbol_table.get_scope_path(local_id)
+                    ))
                 seen.add(param)
                 entry = SymbolTableEntry(
                     name=param, kind='param', scope_id=local_id,
@@ -374,11 +412,16 @@ class ScopeChecker:
                 try:
                     self.symbol_table.declare(local_id, entry)
                 except ValueError as e:
-                    self.diagnostics.append(str(e))
+                    self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=entry.decl_node_id, scope_path=self.symbol_table.get_scope_path(local_id)))
             # locals
             for idx, local in enumerate(pdef.body.locals):
                 if local in seen:
-                    self.diagnostics.append(f"Local variable '{local}' shadows parameter in proc '{pdef.name}'")
+                    self.diagnostics.append(Diagnostic(
+                        kind='ParamShadowed',
+                        message=f"Local variable '{local}' shadows parameter in proc '{pdef.name}'",
+                        node_id=self._proxy_id(pdef.body.node_id, f"proc:{pdef.name}:local", idx),
+                        scope_path=self.symbol_table.get_scope_path(local_id)
+                    ))
                 entry = SymbolTableEntry(
                     name=local, kind='var', scope_id=local_id,
                     decl_node_id=self._proxy_id(pdef.body.node_id, f"proc:{pdef.name}:local", idx)
@@ -386,7 +429,7 @@ class ScopeChecker:
                 try:
                     self.symbol_table.declare(local_id, entry)
                 except ValueError as e:
-                    self.diagnostics.append(str(e))
+                    self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=entry.decl_node_id, scope_path=self.symbol_table.get_scope_path(local_id)))
 
         # Functions
         for fdef in self.ast.funcs:
@@ -396,7 +439,12 @@ class ScopeChecker:
             seen = set()
             for idx, param in enumerate(fdef.params):
                 if param in seen:
-                    self.diagnostics.append(f"Duplicate parameter '{param}' in func '{fdef.name}'")
+                    self.diagnostics.append(Diagnostic(
+                        kind='DuplicateName',
+                        message=f"Duplicate parameter '{param}' in func '{fdef.name}'",
+                        node_id=self._proxy_id(fdef.node_id, f"func:{fdef.name}:param", idx),
+                        scope_path=self.symbol_table.get_scope_path(local_id)
+                    ))
                 seen.add(param)
                 entry = SymbolTableEntry(
                     name=param, kind='param', scope_id=local_id,
@@ -405,11 +453,16 @@ class ScopeChecker:
                 try:
                     self.symbol_table.declare(local_id, entry)
                 except ValueError as e:
-                    self.diagnostics.append(str(e))
+                    self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=entry.decl_node_id, scope_path=self.symbol_table.get_scope_path(local_id)))
             # locals
             for idx, local in enumerate(fdef.body.locals):
                 if local in seen:
-                    self.diagnostics.append(f"Local variable '{local}' shadows parameter in func '{fdef.name}'")
+                    self.diagnostics.append(Diagnostic(
+                        kind='ParamShadowed',
+                        message=f"Local variable '{local}' shadows parameter in func '{fdef.name}'",
+                        node_id=self._proxy_id(fdef.body.node_id, f"func:{fdef.name}:local", idx),
+                        scope_path=self.symbol_table.get_scope_path(local_id)
+                    ))
                 entry = SymbolTableEntry(
                     name=local, kind='var', scope_id=local_id,
                     decl_node_id=self._proxy_id(fdef.body.node_id, f"func:{fdef.name}:local", idx)
@@ -417,7 +470,8 @@ class ScopeChecker:
                 try:
                     self.symbol_table.declare(local_id, entry)
                 except ValueError as e:
-                    self.diagnostics.append(str(e))
+                    self.diagnostics.append(Diagnostic(kind='DuplicateName', message=str(e), node_id=entry.decl_node_id, scope_path=self.symbol_table.get_scope_path(local_id)))
+
 
     # ========================================================================
     # M3: RESOLUTION PASS (TODO)
@@ -425,125 +479,229 @@ class ScopeChecker:
 
     def _resolve_uses(self) -> None:
         """
-        Walk all ALGO blocks and resolve each variable use to its declaration.
-
-        M3 TODO:
-        1. For each ProcDef, call:
-           self._resolve_algo(pdef.body.algo, self.local_scopes[pdef.name])
-
-        2. For each FuncDef, call:
-           self._resolve_algo(fdef.body.algo, self.local_scopes[fdef.name])
-
-        3. For Main, call:
-           self._resolve_algo(main.algo, self.symbol_table.base_scopes['main'])
-
-        Example:
-            for pdef in self.ast.procs:
-                local_scope_id = self.local_scopes[pdef.name]
-                self._resolve_algo(pdef.body.algo, local_scope_id)
+        Resolve uses in proc/func main algorithm blocks.
+        For each VarRef found, set varref.resolved to the corresponding SymbolTableEntry.
+        If no declaration is found, emit an UndeclaredVariable diagnostic.
         """
-        pass
+        # Procs
+        for pdef in self.ast.procs:
+            local_scope_id = self.local_scopes.get(pdef.name)
+            if local_scope_id is None:
+                # should not happen if M2 succeeded; report defensively
+                self.diagnostics.append(Diagnostic(
+                    kind='InternalError',
+                    message=f"No local scope found for procedure '{pdef.name}'",
+                    node_id=pdef.node_id
+                ))
+                continue
+            # pdef.body.algo might be the algo object
+            if getattr(pdef, 'body', None) and getattr(pdef.body, 'algo', None):
+                self._resolve_algo(pdef.body.algo, local_scope_id, owner_name=pdef.name, owner_kind='proc')
 
-    def _resolve_algo(self, algo: Algo, scope_id: int) -> None:
+        # Funcs
+        for fdef in self.ast.funcs:
+            local_scope_id = self.local_scopes.get(fdef.name)
+            if local_scope_id is None:
+                self.diagnostics.append(Diagnostic(
+                    kind='InternalError',
+                    message=f"No local scope found for function '{fdef.name}'",
+                    node_id=fdef.node_id
+                ))
+                continue
+            if getattr(fdef, 'body', None) and getattr(fdef.body, 'algo', None):
+                self._resolve_algo(fdef.body.algo, local_scope_id, owner_name=fdef.name, owner_kind='func')
+
+        # Main
+        main_scope = self.symbol_table.base_scopes['main']
+        if getattr(self.ast, 'main', None) and getattr(self.ast.main, 'algo', None):
+            self._resolve_algo(self.ast.main.algo, main_scope, owner_name='main', owner_kind='main')
+
+    def _resolve_algo(self, algo: Any, scope_id: int, owner_name: Optional[str] = None, owner_kind: Optional[str] = None) -> None:
         """
-        Resolve all variable uses within an algorithm block.
+        Walk instructions in an Algo and resolve any VarRefs inside.
+        This function is defensive about field names for the instruction list.
+        """
+        instrs = getattr(algo, 'instrs', None) or getattr(algo, 'stmts', None) or getattr(algo, 'statements', None)
+        if instrs is None:
+            # Nothing to do
+            return
 
-        M3 TODO:
-        This is the heart of name resolution. You need to:
-        1. Walk all instructions in algo.instrs
-        2. For each instruction, find all VarRef nodes
-        3. For each VarRef:
-           a. Look up the name using lookup_chain(scope_id, name)
-           b. If found: set varref.resolved = entry
-           c. If not found: add diagnostic about undeclared variable
-
-        Where to find VarRefs:
-        - In Assign: the var is a string, but rhs might contain VarRefs
-        - In Print: output might be a VarRef
-        - In Call: args are atoms (could be VarRefs)
-        - In LoopWhile/LoopDoUntil: cond is a term (could contain VarRefs)
-        - In BranchIf: cond is a term (could contain VarRefs)
-        - Recursively in nested Algos (loop bodies, branch bodies)
-
-        Example:
-            for instr in algo.instrs:
-                if isinstance(instr, Print):
-                    if isinstance(instr.output, VarRef):
-                        self._resolve_varref(instr.output, scope_id)
-
-                elif isinstance(instr, Assign):
-                    # Resolve the variable being assigned to
-                    # (it's a string, not a VarRef, but we might want to check it exists)
-                    # Resolve the RHS
-                    if isinstance(instr.rhs, Call):
-                        for arg in instr.rhs.args:
+        for instr in instrs:
+            # Detect types by class names to stay robust to small AST naming differences
+            itype = type(instr).__name__
+            # ASSIGN: typically has 'lhs' (string/name) and 'rhs' (Term or Call)
+            if itype in ('Assign', 'Assignment'):
+                # resolve RHS (term or call)
+                rhs = getattr(instr, 'rhs', None)
+                if rhs is not None:
+                    # Call can appear as rhs (function call returning a value)
+                    if type(rhs).__name__ in ('Call',):
+                        # call args may be VarRef or Terms
+                        for arg in getattr(rhs, 'args', []):
+                            # arg may be an Atom/Term/VarRef
                             if isinstance(arg, VarRef):
                                 self._resolve_varref(arg, scope_id)
-                    else:  # rhs is a Term
-                        self._resolve_term(instr.rhs, scope_id)
+                            else:
+                                # if arg is Term-like, attempt to resolve inside
+                                self._resolve_term(arg, scope_id)
+                    else:
+                        self._resolve_term(rhs, scope_id)
+                # Optionally resolve LHS if it's a VarRef object (some ASTs use VarRef)
+                lhs = getattr(instr, 'lhs', None)
+                if isinstance(lhs, VarRef):
+                    self._resolve_varref(lhs, scope_id)
 
-                elif isinstance(instr, Call):
-                    for arg in instr.args:
-                        if isinstance(arg, VarRef):
-                            self._resolve_varref(arg, scope_id)
+            # PRINT: may have expression or varref
+            elif itype == 'Print':
+                out = getattr(instr, 'expr', None) or getattr(instr, 'output', None)
+                if isinstance(out, VarRef):
+                    self._resolve_varref(out, scope_id)
+                else:
+                    self._resolve_term(out, scope_id)
 
-                elif isinstance(instr, LoopWhile):
-                    self._resolve_term(instr.cond, scope_id)
-                    self._resolve_algo(instr.body, scope_id)  # Recursive!
+            # CALL (proc call) - resolve argument terms
+            elif itype == 'Call':
+                for arg in getattr(instr, 'args', []):
+                    if isinstance(arg, VarRef):
+                        self._resolve_varref(arg, scope_id)
+                    else:
+                        self._resolve_term(arg, scope_id)
 
-                elif isinstance(instr, LoopDoUntil):
-                    self._resolve_algo(instr.body, scope_id)  # Recursive!
-                    self._resolve_term(instr.cond, scope_id)
+            # LOOPS
+            elif itype in ('LoopWhile', 'LoopDoUntil', 'WhileLoop', 'DoUntilLoop'):
+                cond = getattr(instr, 'cond', None)
+                if cond is not None:
+                    self._resolve_term(cond, scope_id)
+                body = getattr(instr, 'body', None)
+                if body is not None:
+                    self._resolve_algo(body, scope_id, owner_name, owner_kind)
 
-                elif isinstance(instr, BranchIf):
-                    self._resolve_term(instr.cond, scope_id)
-                    self._resolve_algo(instr.then_, scope_id)  # Recursive!
-                    if instr.else_:
-                        self._resolve_algo(instr.else_, scope_id)  # Recursive!
-        """
-        pass
+            # BRANCH / IF
+            elif itype in ('BranchIf', 'If', 'IfThen'):
+                cond = getattr(instr, 'cond', None)
+                if cond is not None:
+                    self._resolve_term(cond, scope_id)
+                then_block = getattr(instr, 'then_', None) or getattr(instr, 'then', None)
+                if then_block is not None:
+                    self._resolve_algo(then_block, scope_id, owner_name, owner_kind)
+                else_block = getattr(instr, 'else_', None) or getattr(instr, 'else', None)
+                if else_block is not None:
+                    self._resolve_algo(else_block, scope_id, owner_name, owner_kind)
+
+            # HALT, RETURN, or other simple instructions - may contain terms in some ASTs
+            else:
+                # Best-effort: inspect attributes for Terms and resolve them
+                for attr_name in dir(instr):
+                    if attr_name.startswith('_'):
+                        continue
+                    try:
+                        attr = getattr(instr, attr_name)
+                    except Exception:
+                        continue
+                    # If attribute looks like a Term or VarRef, resolve it
+                    if isinstance(attr, VarRef):
+                        self._resolve_varref(attr, scope_id)
+                    elif type(attr).__name__ in ('Term', 'TermAtom', 'TermUn', 'TermBin'):
+                        self._resolve_term(attr, scope_id)
+                    # if it's an iterable of terms/varrefs, check the items
+                    elif isinstance(attr, (list, tuple)):
+                        for item in attr:
+                            if isinstance(item, VarRef):
+                                self._resolve_varref(item, scope_id)
+                            elif type(item).__name__ in ('Term', 'TermAtom', 'TermUn', 'TermBin'):
+                                self._resolve_term(item, scope_id)
+                # end best-effort
 
     def _resolve_varref(self, varref: VarRef, scope_id: int) -> None:
         """
-        Resolve a single variable reference.
+        Resolve a VarRef node by looking it up in the symbol table chain starting
+        from the provided scope_id.
 
-        M3 TODO:
-        Look up the name and set the resolved field.
-
-        Example:
-            entry = self.symbol_table.lookup_chain(scope_id, varref.name)
-            if entry:
-                varref.resolved = entry
-            else:
-                self.diagnostics.append(
-                    f"Undeclared variable '{varref.name}' at node #{varref.node_id}"
-                )
+        If not found, append an UndeclaredVariable diagnostic.
+        If found, attach to varref.resolved and record uses_to_decls mapping.
         """
-        pass
+        if varref is None:
+            return
+        name = getattr(varref, 'name', None)
+        if not name:
+            return
+
+        # Prefer local lookup first, then chain lookup if needed.
+        # lookup_chain is expected to search the provided scope and parent scopes.
+        entry = None
+        try:
+            # If the current (starting) scope exists, try lookup_local first (for strict local param/local priority)
+            entry = self.symbol_table.lookup_local(scope_id, name)
+            if not entry:
+                entry = self.symbol_table.lookup_chain(scope_id, name)
+        except Exception:
+            # Fallback: try chain directly
+            entry = self.symbol_table.lookup_chain(scope_id, name)
+
+        if entry is None:
+            self.diagnostics.append(Diagnostic(
+                kind='UndeclaredVariable',
+                message=f"Undeclared variable '{name}'",
+                node_id=getattr(varref, 'node_id', -1),
+                scope_path=self.symbol_table.get_scope_path(scope_id)
+            ))
+        else:
+            # attach resolved
+            setattr(varref, 'resolved', entry)
+            # record use→decl mapping if we have node ids
+            vid = getattr(varref, 'node_id', -1)
+            if vid is not None and vid != -1:
+                try:
+                    self.uses_to_decls[vid] = int(entry.decl_node_id)
+                except Exception:
+                    # decl_node_id might be non-int (proxy); still safe to store
+                    self.uses_to_decls[vid] = entry.decl_node_id
 
     def _resolve_term(self, term: Any, scope_id: int) -> None:
         """
-        Resolve all VarRefs in a term (expression).
-
-        M3 TODO:
-        Terms can be:
-        - TermAtom: contains an atom (VarRef or NumberLit)
-        - TermUn: contains another term
-        - TermBin: contains two terms
-
-        Example:
-            if isinstance(term, TermAtom):
-                if isinstance(term.atom, VarRef):
-                    self._resolve_varref(term.atom, scope_id)
-
-            elif isinstance(term, TermUn):
-                self._resolve_term(term.term, scope_id)  # Recursive!
-
-            elif isinstance(term, TermBin):
-                self._resolve_term(term.left, scope_id)   # Recursive!
-                self._resolve_term(term.right, scope_id)  # Recursive!
+        Recursively resolve VarRefs inside Term nodes.
+        Term shapes supported: TermAtom (holds atom possibly a VarRef), TermUn, TermBin.
         """
-        pass
+        if term is None:
+            return
+        tname = type(term).__name__
+
+        if tname == 'TermAtom':
+            atom = getattr(term, 'atom', None)
+            if isinstance(atom, VarRef):
+                self._resolve_varref(atom, scope_id)
+            # numbers/strings ignored
+        elif tname == 'TermUn':
+            inner = getattr(term, 'term', None) or getattr(term, 'inner', None)
+            if inner is not None:
+                self._resolve_term(inner, scope_id)
+        elif tname == 'TermBin':
+            left = getattr(term, 'left', None)
+            right = getattr(term, 'right', None)
+            if left is not None:
+                self._resolve_term(left, scope_id)
+            if right is not None:
+                self._resolve_term(right, scope_id)
+        else:
+            # Best-effort: if term has attributes that look like sub-terms, walk them
+            # to be robust to minor AST naming differences.
+            for attr_name in dir(term):
+                if attr_name.startswith('_'):
+                    continue
+                try:
+                    attr = getattr(term, attr_name)
+                except Exception:
+                    continue
+                if isinstance(attr, VarRef):
+                    self._resolve_varref(attr, scope_id)
+                elif type(attr).__name__ in ('Term', 'TermAtom', 'TermUn', 'TermBin'):
+                    self._resolve_term(attr, scope_id)
+                elif isinstance(attr, (list, tuple)):
+                    for item in attr:
+                        if isinstance(item, VarRef):
+                            self._resolve_varref(item, scope_id)
+                        elif type(item).__name__ in ('Term', 'TermAtom', 'TermUn', 'TermBin'):
+                            self._resolve_term(item, scope_id)
 
 # ---------- helpers ----------
     def _proxy_id(self, anchor_node_id: int, bucket: str, idx: int) -> int:
