@@ -1,0 +1,6 @@
+glob { }
+proc {
+  echo(a a) { local { } halt }
+}
+func { }
+main { var { } halt }
