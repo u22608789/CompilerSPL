@@ -1,0 +1,9 @@
+glob { a b }
+proc { }
+func { }
+main {
+  var { }
+  if ( a and b ) {
+    halt
+  }
+}
