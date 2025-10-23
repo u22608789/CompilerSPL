@@ -8,6 +8,7 @@ from spl.parser import Parser
 from spl.ast_printer import print_ast
 from spl.ast_ids import assign_ids
 from spl.scope_checker import ScopeChecker  # using class to read diagnostics
+from spl.codegen import CodeGenerator 
 
 def main():
     ap = argparse.ArgumentParser(
@@ -20,6 +21,8 @@ def main():
                     help="Build symbol table (Phase 2). Prints OK or diagnostics.")
     ap.add_argument("--dump-scopes", action="store_true",
                     help="Pretty-print the symbol table tree (Phase 2).")
+    ap.add_argument("--codegen", action="store_true", help="Generate target code (Phase 3)")  # ✅ NEW
+    ap.add_argument("--out", help="Output file for generated code (defaults to <input>.txt)")  # ✅ NEW
     args = ap.parse_args()
 
     with open(args.file, "r", encoding="utf-8") as f:
@@ -53,6 +56,16 @@ def main():
             sys.exit(1)
         else:
             print("Variable Naming and Function Naming accepted")
+
+# Phase 3: Code generation
+    if args.codegen:
+        output_file = args.out or os.path.splitext(args.file)[0] + ".txt"
+        print(f"Generating target code → {output_file}")
+        cg = CodeGenerator(ast)
+        if st is not None:
+            cg.symbol_table = st             
+        cg.generate(output_file)
+        print("Code generation completed successfully.")
 
 if __name__ == "__main__":
     main()
