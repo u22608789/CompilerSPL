@@ -1,24 +1,3 @@
-"""
-Code generator for SPL -> target text file
-
-Drop this file into src/spl/codegen.py. It expects the AST node classes described
-in your parser (Program, Main, Algo, Assign, Call, LoopWhile, LoopDoUntil,
-BranchIf, Print, Halt, TermAtom, TermUn, TermBin, VarRef, NumberLit, StringLit).
-
-This generator follows the translation advice in code-gen.pdf and emits a plain
-ASCII .txt file. It tries to be conservative about condition translation: boolean
-`and`/`or` are expanded into conditional jumps (cascading), and `not` is
-implemented by swapping branches.
-
-Notes / TODOs:
-- The generator currently uses `node.name` / `node.var` etc. These attribute
-  names assume the AST dataclasses implemented in your parser. If your
-  attribute names differ, adjust the accessors accordingly.
-- Symbol-table lookups (for internal numbering of variables) are left as a
-  simple identity (emit the variable name). If you want to use `symbol_table`,
-  import and map names via it (there is a placeholder hook `self.lookup(name)`).
-"""
-
 from typing import Optional
 
 # Try to import AST node types for isinstance checks (not required at runtime)
