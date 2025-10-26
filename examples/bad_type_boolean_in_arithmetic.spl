@@ -1,0 +1,7 @@
+glob { x }
+proc { }
+func { }
+main {
+  var { }
+  x = ( ( x > 5 ) plus 1 )
+}

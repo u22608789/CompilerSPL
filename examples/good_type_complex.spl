@@ -1,0 +1,29 @@
+glob { }
+
+proc {
+  repeatprint(n) {
+    local { i }
+    i = n;
+    do {
+      print i;
+      i = ( i minus 1 )
+    } until ( i eq 0 )
+  }
+}
+
+func {
+  triple(x) {
+    local { temp }
+    temp = ( x mult 3 );
+    halt;
+    return temp
+  }
+}
+
+main {
+  var { val }
+  val = 4;
+  repeatprint(val);
+  val = triple(val);
+  print val
+}
