@@ -5,9 +5,16 @@
 python parse_file.py examples/demo.spl --check-scopes --type-check --emit-basic
 ```
 
-replace `<examples/demo.spl>` with the input file which you wish to convert to BASIC
+Replace `<examples/demo.spl>` with the input file which you wish to convert to BASIC.
+The file will be saved to `<filename>.bas`.  
 
-## For specific phases of the project
+# Running the BASIC 
+Paste the `.bas` file into Owlet BBC BASIC Editor: https://bbcmic.ro
+Or any other online BASIC Emulators, however, we know the above one works for our dialect. 
+If using OneCompiler, make sure to include `#lang "qb"` at the top.
+
+
+# For specific phases of the project
 ```
 # Phase 1: print AST
 python parse_file.py examples/demo.spl --print-ast
