@@ -2,6 +2,7 @@
 from .astnodes import *
 from typing import Dict, List, Optional, Union
 
+
 class TypeChecker:
     """
     Visitor-based type checker for SPL AST.
@@ -9,9 +10,32 @@ class TypeChecker:
     """
 
     def __init__(self):
-        # Simple symbol table stack for locals/globals
-        self.scopes: List[Dict[str, str]] = [{}]  # top of stack is current scope
+        self.scopes: List[Dict[str, str]] = [{}]
         self.current_func_ret_type: Optional[str] = None
+        self.procs: Dict[str, int] = {}
+        self.funcs: Dict[str, int] = {}
+        # self.errors: List[str] = []
+        self._call_context: str = "stmt"
+        self.errors = []
+        self._collect = False
+
+    def report(self, msg: str):
+        self.errors.append(msg)
+
+    def get_errors(self):
+        return self.errors
+
+    def check_program(self, ast) -> bool:
+        self.errors.clear()
+        self._collect = True
+        try:
+            self.visit(ast)
+        except Exception as e:
+            # top-level fall-through; most errors should be captured below
+            self.errors.append(str(e))
+        finally:
+            self._collect = False
+        return len(self.errors) == 0
 
     # ------------------------
     # Scope management
@@ -24,14 +48,15 @@ class TypeChecker:
 
     def define_var(self, name: str, expected_type: str = "numeric"):
         if name in self.scopes[-1]:
-            raise Exception(f"Variable '{name}' already declared in this scope")
+            raise Exception(
+                f"Variable '{name}' already declared in this scope")
         self.scopes[-1][name] = expected_type
 
     def lookup_var(self, name: str) -> str:
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
-        raise Exception(f"Undeclared variable '{name}'")
+        raise Exception(f"Variable '{name}' not declared")
 
     # ------------------------
     # General visit dispatcher
@@ -48,24 +73,22 @@ class TypeChecker:
     # Top-level program
     # ------------------------
     def visit_Program(self, node: Program):
-        # Add globals to current scope
+        # register globals (numeric)
         for g in node.globals:
             self.define_var(g, "numeric")
 
-        # Visit procedures
+        # collect proc/func signatures (arity only; ScopeChecker already
+        # enforces name disjointness)
         for p in node.procs:
-            self.visit(p)
-
-        # Visit functions
+            self.procs[p.name] = len(p.params)
         for f in node.funcs:
-            self.visit(f)
+            self.funcs[f.name] = len(f.params)
 
-        # Visit main program
+        # now type-check bodies
+        for p in node.procs: self.visit(p)
+        for f in node.funcs: self.visit(f)
         self.visit(node.main)
 
-    # ------------------------
-    # Procedure / Function
-    # ------------------------
     def visit_ProcDef(self, node: ProcDef):
         self.push_scope()
         for param in node.params:
@@ -82,7 +105,8 @@ class TypeChecker:
         self.visit(node.body)
         ret_type = self.visit(node.ret)
         if ret_type != "numeric":
-            raise Exception(f"Function '{node.name}' must return numeric, got '{ret_type}'")
+            raise Exception(
+                f"Function '{node.name}' must return numeric, got '{ret_type}'")
         self.pop_scope()
         self.current_func_ret_type = None
         return "function"
@@ -105,7 +129,13 @@ class TypeChecker:
     # ------------------------
     def visit_Algo(self, node: Algo):
         for instr in node.instrs:
-            self.visit(instr)
+            if self._collect:
+                try:
+                    self.visit(instr)
+                except Exception as e:
+                    self.errors.append(str(e))
+            else:
+                self.visit(instr)
 
     # ------------------------
     # Instructions
@@ -119,44 +149,76 @@ class TypeChecker:
             return "string"
         typ = self.visit(output_node)
         if typ != "numeric":
-            raise Exception(f"Print can only output numeric or string values, got '{typ}'")
+            raise Exception(
+                f"Print can only output numeric or string values, got '{typ}'")
         return typ
 
+
     def visit_Call(self, node: Call):
-        # Calls are allowed; we assume functions are numeric and procedures void
+        # Check argument count (≤ 3) & types
+        arity = len(node.args)
+        if arity > 3:
+            raise Exception(f"Too many arguments: {arity} (max 3)")
         for arg in node.args:
-            self.visit(arg)
-        return "numeric"  # for function calls in expressions
+            aty = self.visit(arg)
+            if aty != "numeric":
+                raise Exception(
+                    f"Arguments must be numeric ATOMs, got '{aty}'")
+
+        if self._call_context == "expr":
+            # must be a function
+            if node.name not in self.funcs:
+                raise Exception(f"'{node.name}' is not a function")
+            if self.funcs[node.name] != arity:
+                raise Exception(
+                    f"Function '{node.name}' arity mismatch: expected {self.funcs[node.name]}, got {arity}")
+            return "numeric"
+        else:
+            # statement position: must be a procedure
+            if node.name not in self.procs:
+                raise Exception(f"'{node.name}' is not a procedure")
+            if self.procs[node.name] != arity:
+                raise Exception(
+                    f"Procedure '{node.name}' arity mismatch: expected {self.procs[node.name]}, got {arity}")
+            return "void"
 
     def visit_Assign(self, node: Assign):
+        # LHS must be numeric variable
+        lhs_type = self.lookup_var(node.var)
+        if lhs_type != "numeric":
+            raise Exception(f"Assignment LHS '{node.var}' must be numeric")
+
         if isinstance(node.rhs, Call):
-            self.visit(node.rhs)
+            # Calling a function in expression position
+            old = self._call_context; self._call_context = "expr"
+            try:
+                rty = self.visit(node.rhs)
+            finally:
+                self._call_context = old
+            if rty != "numeric":
+                raise Exception("Function call in assignment must be numeric")
         else:
             rhs_type = self.visit(node.rhs)
             if rhs_type != "numeric":
                 raise Exception(f"Assignment RHS must be numeric, got '{rhs_type}'")
-        # LHS must be numeric
-        lhs_type = self.lookup_var(node.var)
-        if lhs_type != "numeric":
-            raise Exception(f"Assignment LHS '{node.var}' must be numeric")
         return "numeric"
 
     def visit_LoopWhile(self, node: LoopWhile):
         cond_type = self.visit(node.cond)
-        if cond_type not in ("numeric", "boolean"):
-            raise Exception(f"LoopWhile condition must be numeric or boolean, got '{cond_type}'")
+        if cond_type != "boolean":
+            raise Exception(f"While condition must be boolean, got '{cond_type}'")
         self.visit(node.body)
 
     def visit_LoopDoUntil(self, node: LoopDoUntil):
         cond_type = self.visit(node.cond)
-        if cond_type not in ("numeric", "boolean"):
-            raise Exception(f"LoopDoUntil condition must be numeric or boolean, got '{cond_type}'")
+        if cond_type != "boolean":
+            raise Exception(f"Do-until condition must be boolean, got '{cond_type}'")
         self.visit(node.body)
 
     def visit_BranchIf(self, node: BranchIf):
         cond_type = self.visit(node.cond)
-        if cond_type not in ("numeric", "boolean"):
-            raise Exception(f"If condition must be numeric or boolean, got '{cond_type}'")
+        if cond_type != "boolean":
+            raise Exception(f"If condition must be boolean, got '{cond_type}'")
         self.visit(node.then_)
         if node.else_:
             self.visit(node.else_)
@@ -168,26 +230,30 @@ class TypeChecker:
         return self.visit(node.atom)
 
     def visit_TermUn(self, node: TermUn):
-        term_type = self.visit(node.term)
-        if node.op == "neg" and term_type != "numeric":
-            raise Exception(f"Unary 'neg' requires numeric, got '{term_type}'")
-        if node.op == "not" and term_type != "boolean":
-            raise Exception(f"Unary 'not' requires boolean, got '{term_type}'")
-        return term_type
+        t = self.visit(node.term)
+        if node.op == "neg":
+            if t != "numeric":
+                raise Exception(f"Unary 'neg' requires numeric, got '{t}'")
+            return "numeric"
+        if node.op == "not":
+            if t != "boolean":
+                raise Exception(f"Unary 'not' requires boolean, got '{t}'")
+            return "boolean"
+        raise Exception(f"Unknown unary operator '{node.op}'")
 
     def visit_TermBin(self, node: TermBin):
-        left_type = self.visit(node.left)
-        right_type = self.visit(node.right)
+        lt = self.visit(node.left)
+        rt = self.visit(node.right)
         if node.op in ("plus", "minus", "mult", "div"):
-            if left_type != "numeric" or right_type != "numeric":
+            if lt != "numeric" or rt != "numeric":
                 raise Exception(f"Binary '{node.op}' requires numeric operands")
             return "numeric"
         elif node.op in ("or", "and"):
-            if left_type != "boolean" or right_type != "boolean":
+            if lt != "boolean" or rt != "boolean":
                 raise Exception(f"Binary '{node.op}' requires boolean operands")
             return "boolean"
         elif node.op in ("eq", ">"):
-            if left_type != "numeric" or right_type != "numeric":
+            if lt != "numeric" or rt != "numeric":
                 raise Exception(f"Comparison '{node.op}' requires numeric operands")
             return "boolean"
         else:

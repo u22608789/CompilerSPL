@@ -1,0 +1,23 @@
+glob { }
+proc {
+  echo(a) { local { } print a }
+}
+func {
+  double(n) {
+    local { t }
+    t = ( n mult 2 );
+    print 0;
+    return t
+  }
+}
+main {
+  var { i j }
+  i = 5;
+  while ( i > 0 ) {
+    print i;
+    i = ( i minus 1 )
+  };
+  j = double(i);
+  echo(j);
+  if ( j eq 0 ) { print "ok" } else { print "bad" }
+}

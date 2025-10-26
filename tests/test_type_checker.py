@@ -290,68 +290,74 @@ class TestProceduresAndFunctions:
         assert is_correct, f"Should pass but got errors: {errors}"
     
     def test_function_call(self):
-        """Function calls in assignments are correctly typed"""
-        source = """
-        glob { }
-        proc { }
-        func {
-          double(n) {
-            local { }
-            halt;
-            return ( n mult 2 )
-          }
+      """Function calls in assignments are correctly typed (return ATOM)"""
+      source = """
+      glob { }
+      proc { }
+      func {
+        double(n) {
+          local { t }
+          t = ( n mult 2 );
+          halt;
+          return t
         }
-        main {
-          var { x result }
-          x = 10;
-          result = double(x);
-          print result
-        }
-        """
-        is_correct, errors = parse_and_check(source)
-        assert is_correct, f"Should pass but got errors: {errors}"
+      }
+      main {
+        var { x result }
+        x = 10;
+        result = double(x);
+        print result
+      }
+      """
+      is_correct, errors = parse_and_check(source)
+      assert is_correct, f"Should pass but got errors: {errors}"
+
     
     def test_function_return_numeric(self):
-        """Function return value must be numeric"""
-        source = """
-        glob { n }
-        proc { }
-        func {
-          bad() {
-            local { }
-            halt;
-            return ( n > 0 )
-          }
+      """Function return must be a declared numeric ATOM (negative)"""
+      source = """
+      glob { n }
+      proc { }
+      func {
+        bad() {
+          local { }
+          halt;
+          return bogus
         }
-        main {
-          var { }
-          halt
-        }
-        """
-        is_correct, errors = parse_and_check(source)
-        assert not is_correct, "Should fail: function returns boolean"
+      }
+      main {
+        var { }
+        halt
+      }
+      """
+      is_correct, errors = parse_and_check(source)
+      assert not is_correct, "Should fail: returning an undeclared ATOM"
+      assert any("not declared" in str(e).lower() for e in errors)
+
     
     def test_procedure_with_local_variables(self):
-        """Procedures can have local variables"""
-        source = """
-        glob { }
-        proc {
-          calc(a b c) {
-            local { x y z }
-            x = a;
-            y = b;
-            z = c;
-            print ( ( x plus y ) plus z )
-          }
+      """Procedures can have local variables; print uses OUTPUT (ATOM)"""
+      source = """
+      glob { }
+      proc {
+        calc(a b c) {
+          local { x y z }
+          x = a;
+          y = b;
+          z = c;
+          z = ( ( x plus y ) plus z );
+          print z
         }
-        func { }
-        main {
-          var { }
-          calc(1 2 3)
-        }
-        """
-        is_correct, errors = parse_and_check(source)
-        assert is_correct, f"Should pass but got errors: {errors}"
+      }
+      func { }
+      main {
+        var { }
+        calc(1 2 3)
+      }
+      """
+      is_correct, errors = parse_and_check(source)
+      assert is_correct, f"Should pass but got errors: {errors}"
+
     
     def test_function_with_no_params(self):
         """Functions can have no parameters"""
@@ -529,7 +535,7 @@ class TestComplexExpressions:
         main {
           var { }
           if ( ( ( a > b ) and ( b > c ) ) or ( a eq c ) ) {
-            print "complex condition"
+            print "complex"
           }
         }
         """
@@ -719,7 +725,7 @@ class TestBranches:
           if ( x > 0 ) {
             print "positive"
           } else {
-            print "non positive"
+            print "nonpositive"
           }
         }
         """
@@ -736,12 +742,12 @@ class TestBranches:
           var { }
           if ( x > 0 ) {
             if ( y > 0 ) {
-              print "both positive"
+              print "bothpositive"
             } else {
-              print "x positive y not"
+              print "xpositiveynot"
             }
           } else {
-            print "x not positive"
+            print "xnotpositive"
           }
         }
         """
@@ -791,9 +797,9 @@ class TestIntegration:
           increment();
           
           if ( x > y ) {
-            print "x greater"
+            print "xgreater"
           } else {
-            print "y greater or equal"
+            print "ygreaterorequal"
           };
           
           while ( counter > 0 ) {
