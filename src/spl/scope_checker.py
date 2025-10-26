@@ -639,12 +639,10 @@ class ScopeChecker:
             entry = self.symbol_table.lookup_chain(scope_id, name)
 
         if entry is None:
-            self.diagnostics.append(Diagnostic(
-                kind='UndeclaredVariable',
-                message=f"Undeclared variable '{name}'",
-                node_id=getattr(varref, 'node_id', -1),
-                scope_path=self.symbol_table.get_scope_path(scope_id)
-            ))
+            main_id   = self.symbol_table.base_scopes['main']
+            global_id = self.symbol_table.base_scopes['global']
+            if scope_id == main_id:
+                entry = self.symbol_table.lookup_local(global_id, name)
         else:
             # attach resolved
             setattr(varref, 'resolved', entry)
